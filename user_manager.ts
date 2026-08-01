@@ -17,15 +17,22 @@ class UserManager {
         );
     }
 
+    async getHashPassword(password: string): Promise<string> {
+        return await this.crypto.hashPassword(password);
+    }
+
     async create(password: string, repeatPassword: string): Promise<string> {
         if (password !== repeatPassword) throw new Errors('Password is not same.');
 
-        const hashPassword = await this.crypto.hashPassword(password);
-        return hashPassword;
+        return await this.getHashPassword(password);
+    }
+
+    async verifyPassword(password: string, hashPassword: string): Promise<boolean> {
+        return await this.crypto.verifyPassword(hashPassword, password);
     }
 
     async singIn(password: string, hashPassword: string): Promise<boolean> {
-        return await this.crypto.verifyPassword(hashPassword, password);
+        return await this.verifyPassword(password, hashPassword);
     }
 
     async getToken(
@@ -49,15 +56,15 @@ class UserManager {
         return obj;
     }
 
-    getRefreshToken(id: string, email: string): string {
+    async getRefreshToken(id: string, email: string): Promise<string> {
         const expires = new Date();
         expires.setUTCDate(expires.getDate() + parseInt(process.env.REFRESH_TOKEN_VALIDATION_DAY as string, 10));
         const identityText = `id:${id}${this.stringSeparator}email:${email}${this.stringSeparator}${this.refreshTokenExpairName}:${expires.toUTCString()}${this.stringSeparator}`;
-        return this.crypto.aseEncrypt(identityText);
+        return await this.crypto.aseEncrypt(identityText);
     }
 
-    validateRefreshToken(refreshToken: string): Record<string, any> {
-        const identityText = this.crypto.aseDecrypt(refreshToken);
+    async validateRefreshToken(refreshToken: string): Promise<Record<string, any>> {
+        const identityText = await this.crypto.aseDecrypt(refreshToken);
         const data = this.parseStringToObject(identityText);
         if (!(this.refreshTokenExpairName in data)) throw new Errors('Token has expired', 401);
 

@@ -1,51 +1,89 @@
-import crypto from 'crypto';
-
 class AesCryptography {
-    private generateKey(password: string): Buffer {
-        return crypto.createHash('sha256').update(password).digest();
+    private async generateKey(password: string): Promise<CryptoKey> {
+        // Convert password to raw bytes
+        const enc = new TextEncoder();
+        const passwordBytes = enc.encode(password);
+
+        // Hash password with SHA-256 to get a 256-bit key
+        const hash = await crypto.subtle.digest("SHA-256", passwordBytes);
+
+        // Import hash as AES-CBC key
+        return crypto.subtle.importKey(
+            "raw",
+            hash,
+            { name: "AES-CBC" },
+            false,
+            ["encrypt", "decrypt"]
+        );
     }
 
-    private encryptStringToBytes(plainText: string, key: Buffer, iv: Buffer): Buffer {
+    private async encryptStringToBytes(
+        plainText: string,
+        key: CryptoKey,
+        iv: BufferSource): Promise<ArrayBuffer> {
         if (!plainText) throw new Error("plain_text cannot be null or empty.");
-        if (!key || key.length === 0) throw new Error("key cannot be null or empty.");
-        if (!iv || iv.length === 0) throw new Error("iv cannot be null or empty.");
+        if (!key) throw new Error("key cannot be null or empty.");
+        if (!iv) throw new Error("iv cannot be null or empty.");
 
-        const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
-        const encrypted = Buffer.concat([cipher.update(plainText, 'utf8'), cipher.final()]);
-
-        return encrypted;
+        const enc = new TextEncoder();
+        return await crypto.subtle.encrypt(
+            { name: "AES-CBC", iv },
+            key,
+            enc.encode(plainText)
+        );
     }
 
-    private decryptStringFromBytes(cipherText: Buffer, key: Buffer, iv: Buffer): string {
+    private async decryptStringFromBytes(
+        cipherText: ArrayBuffer,
+        key: CryptoKey,
+        iv: BufferSource): Promise<string> {
         if (!cipherText) throw new Error("cipher_text cannot be null or empty.");
-        if (!key || key.length === 0) throw new Error("key cannot be null or empty.");
-        if (!iv || iv.length === 0) throw new Error("iv cannot be null or empty.");
+        if (!key) throw new Error("key cannot be null or empty.");
+        if (!iv) throw new Error("iv cannot be null or empty.");
 
-        const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
-        const decrypted = Buffer.concat([decipher.update(cipherText), decipher.final()]);
+        const decrypted = await crypto.subtle.decrypt(
+            { name: "AES-CBC", iv },
+            key,
+            cipherText
+        );
 
-        return decrypted.toString('utf8');
+        const dec = new TextDecoder();
+        return dec.decode(decrypted);
     }
 
-    encrypt(text: string, password: string): string {
+    async encrypt(text: string, password: string): Promise<string> {
         try {
-            const key = this.generateKey(password);
-            const iv = crypto.randomBytes(16);
-            const encrypted = this.encryptStringToBytes(text, key, iv);
-            const encryptedWithIv = Buffer.concat([iv, encrypted]);
-            return encodeURIComponent(encryptedWithIv.toString('base64'));
+            const key = await this.generateKey(password);
+            const iv = crypto.getRandomValues(new Uint8Array(16));
+            const encrypted = await this.encryptStringToBytes(text, key, iv);
+
+            // Combine IV + encrypted data into one buffer
+            const combined = new Uint8Array(iv.length + encrypted.byteLength);
+            combined.set(iv);
+            combined.set(new Uint8Array(encrypted), iv.length);
+
+            // Return Base64 encoded
+            return encodeURIComponent(
+                btoa(String.fromCharCode(...Array.from(combined))));
         } catch (error) {
             throw error;
         }
     }
 
-    decrypt(encryptedText: string, password: string): string {
+    async decrypt(encryptedText: string, password: string): Promise<string> {
         try {
-            const encryptedWithIv = Buffer.from(decodeURIComponent(encryptedText), 'base64');
-            const iv = encryptedWithIv.subarray(0, 16);
-            const encryptedData = encryptedWithIv.subarray(16);
-            const key = this.generateKey(password);
-            return this.decryptStringFromBytes(encryptedData, key, iv);
+            const combinedBytes = new Uint8Array(
+                atob(decodeURIComponent(encryptedText))
+                    .split("")
+                    .map(c => c.charCodeAt(0))
+            );
+
+            const iv = combinedBytes.subarray(0, 16);
+            const encryptedData = combinedBytes.subarray(16);
+            const key = await this.generateKey(password);
+
+            return await this
+                .decryptStringFromBytes(encryptedData.slice().buffer, key, iv);
         } catch (error) {
             throw error;
         }

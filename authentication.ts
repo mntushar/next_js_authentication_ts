@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
+import AppInfo from "./app_info";
 import Errors from "./error_handler";
 import JwtHandler from "./jwt_token_handler";
-import AppInfo from "./app_info";
 
 export class AuthenticationManager {
     private jwtHandler: JwtHandler;
@@ -69,6 +69,40 @@ export class AuthenticationManager {
         }
     }
 
+    permissionForRoles(roles: string) {
+        const accessRoles = this.getClaim('roles');
+        if (!accessRoles || accessRoles.length === 0) throw new Errors('Bad request', 400);
+
+        const userRoles = roles.split(',');
+        if (!userRoles || userRoles.length === 0) throw new Errors('Bad request', 400);
+
+        let isPermited = false;
+        for (const role of userRoles) {
+            if (accessRoles.includes(role)) {
+                isPermited = true;
+                break;
+            }
+        }
+
+        if (!isPermited) throw new Errors('Unauthorized request', 401);
+    }
+
+    permissionForClaim(claim: [string, any]) {
+        const [claimName, claimValue] = claim;
+        if (!claimName) throw new Errors('Bad request', 400);
+
+        const accessClaim = this.getClaim(claimName);
+        if (!accessClaim || accessClaim.length === 0) throw new Errors('Bad request', 400);
+
+        // If claimValue is array
+        if (Array.isArray(claimValue)) {
+            if (!claimValue.some(v => v === accessClaim)) throw new Errors('Unauthorized request', 401);
+            return;
+        }
+
+        if (accessClaim !== claimValue) throw new Errors('Unauthorized request', 401);
+    }
+
     getClaims(): Record<string, any> {
         const token = this.getToekn();
         return this.jwtHandler.decodeToken(token) as object;
@@ -83,9 +117,18 @@ export class AuthenticationManager {
     }
 }
 
-const Authorization = async (request: Request) => {
+const Authorization = async (
+    request: Request,
+    roles?: string | null,
+    claim?: [string, any] | null) => {
     const authenManager = new AuthenticationManager(request);
     await authenManager.authenticate();
+
+    if (roles)
+        authenManager.permissionForRoles(roles);
+
+    if (claim)
+        authenManager.permissionForClaim(claim);
 }
 
 export const AuthorizationByCookies = async (request: Request) => {

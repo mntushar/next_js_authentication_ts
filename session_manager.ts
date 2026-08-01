@@ -25,11 +25,11 @@ class SessionManager {
             }
 
             const isvalid = this.checkTokenValidation(token);
-            if(!isvalid){
+            if (!isvalid) {
                 token = await this.refreshAccessToken();
             }
 
-            if(!token || token.trim() === "") throw new Errors('Unauthorize', 401)
+            if (!token || token.trim() === "") throw new Errors('Unauthorize', 401)
 
             return token;
 
@@ -45,14 +45,27 @@ class SessionManager {
         if (!("exp" in payload) && !payload.exp) return false;
         const expireTime = new Date(payload.exp * 1000);
         const nowDateTime = new Date();
-        if((expireTime.getTime() - nowDateTime.getTime()) <= AppInfo.TokenValidationTimeDifference) {
+        if ((expireTime.getTime() - nowDateTime.getTime()) <= AppInfo.TokenValidationTimeDifference) {
             return false;
-        } 
+        }
         return true;
     }
 
     private decodeToken(token: string): any {
         return decodeJwt(token);
+    }
+
+    async getClaims(): Promise<Record<string, any>> {
+        const token = await this.getToken();
+        return this.decodeToken(token) as object;
+    }
+
+    async getClaim(name: string): Promise<any | null> {
+        const payload = await this.getClaims();
+        if (name in payload) {
+            return payload[name];
+        }
+        return null;
     }
 
     private async refreshAccessToken(): Promise<string> {

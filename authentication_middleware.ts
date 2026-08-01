@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { AuthenticationManager } from "./authentication";
-import { match } from "path-to-regexp";
 
 export class AuthenticationMiddleware {
     private protectedRoutes: string[];
@@ -26,10 +25,8 @@ export class AuthenticationMiddleware {
     async authenticationByCookies(): Promise<NextResponse<unknown>> {
         try {
             const path = this.request.nextUrl.pathname;
-            const isProtectedRoute = this.protectedRoutes.some(route => {
-                const matcher = match(route, { decode: decodeURIComponent });
-                return !!matcher(path);
-            });
+            const targetPath = path.match(/^\/([^/]+)/)?.[1] ?? '';
+            const isProtectedRoute = this.protectedRoutes.includes(targetPath);
             if (isProtectedRoute) {
                 await this.authenticationManager.authenticationByCookies();
             }
